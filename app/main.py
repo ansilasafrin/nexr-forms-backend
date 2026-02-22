@@ -12,7 +12,34 @@ from fastapi.middleware.cors import CORSMiddleware
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Forms API")
+description = """
+Nexr Forms API helps you manage events, tracking, and form responses efficiently. 🚀
+
+## Features
+* **Authentication**: Secure user registration and login.
+* **Events**: Create and manage events with custom fields.
+* **Public**: Access public event info and submit registrations.
+* **Uploads**: Handle file uploads for images and documents.
+* **Posts**: Manage news and updates.
+
+"""
+
+tags_metadata = [
+    {"name": "auth", "description": "Operations with users and authentication."},
+    {"name": "events", "description": "Manage events and registrations (Organizer access)."},
+    {"name": "public", "description": "Public endpoints for event details and registration."},
+    {"name": "uploads", "description": "Endpoints for uploading and managing files."},
+    {"name": "posts", "description": "Manage blog posts and updates."},
+]
+
+app = FastAPI(
+    title="Nexr Forms API",
+    description=description,
+    version="1.0.0",
+    openapi_tags=tags_metadata,
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
 
 app.add_middleware(
     CORSMiddleware,

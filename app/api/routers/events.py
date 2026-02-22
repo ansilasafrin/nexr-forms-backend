@@ -5,11 +5,11 @@ from typing import List
 
 from app.api.deps import get_db, get_current_user
 from app.db.models import User, Event, EventField, Registration
-from app.api.endpoints.common import EventCreate
-
+from app.api.endpoints.common import EventCreate, EventResponse, RegistrationResponse, MessageResponse
+ 
 router = APIRouter()
 
-@router.get("/")
+@router.get("/", response_model=List[EventResponse], tags=["events"], summary="List all events", description="Retrieve a list of all events created by the current user.")
 def get_events(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     events = db.query(Event).filter(Event.organizer_id == current_user.id).order_by(Event.created_at.desc()).all()
     res = []
@@ -21,7 +21,7 @@ def get_events(current_user: User = Depends(get_current_user), db: Session = Dep
         res.append(e_dict)
     return res
 
-@router.get("/{event_id}")
+@router.get("/{event_id}", response_model=EventResponse, tags=["events"], summary="Get event details", description="Get detailed information about a specific event, including its fields.")
 def get_event(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
     if not event:
@@ -49,7 +49,7 @@ def get_event(event_id: int, current_user: User = Depends(get_current_user), db:
         "fields": fields
     }
 
-@router.post("/")
+@router.post("/", response_model=EventResponse, tags=["events"], summary="Create an event", description="Create a new event with custom registration fields.")
 def create_event(event: EventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     print(f"DEBUG: create_event called with {event}")
     new_event = Event(
@@ -109,7 +109,7 @@ def create_event(event: EventCreate, current_user: User = Depends(get_current_us
         "fields": fields
     }
 
-@router.put("/{event_id}")
+@router.put("/{event_id}", response_model=EventResponse, tags=["events"], summary="Update an event", description="Modify an existing event's details and registration fields.")
 def update_event(event_id: int, event: EventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     print(f"DEBUG: update_event called for event_id={event_id} with payload: {event}")
     db_event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
@@ -200,7 +200,7 @@ def update_event(event_id: int, event: EventCreate, current_user: User = Depends
         "fields": fields
     }
 
-@router.delete("/{event_id}")
+@router.delete("/{event_id}", response_model=MessageResponse, tags=["events"], summary="Delete an event", description="Permanently delete an event and all its associated registrations.")
 def delete_event(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db_event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
     if not db_event:
@@ -213,7 +213,7 @@ def delete_event(event_id: int, current_user: User = Depends(get_current_user), 
     db.commit()
     return {"success": True}
 
-@router.get("/{event_id}/registrations")
+@router.get("/{event_id}/registrations", response_model=List[RegistrationResponse], tags=["events"], summary="List event registrations", description="Retrieve all registration responses for a specific event.")
 def get_registrations(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
     if not event:
@@ -226,7 +226,7 @@ import csv
 import io
 from fastapi.responses import StreamingResponse
 
-@router.get("/{event_id}/export")
+@router.get("/{event_id}/export", tags=["events"], summary="Export registrations to CSV", description="Download a CSV file containing all registration responses for the event.")
 def export_event_registrations(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
     if not event:
@@ -261,7 +261,7 @@ def export_event_registrations(event_id: int, current_user: User = Depends(get_c
         headers={"Content-Disposition": f"attachment; filename=event_{event_id}_responses.csv"}
     )
 
-@router.put("/{event_id}/registrations/{reg_id}/approve")
+@router.put("/{event_id}/registrations/{reg_id}/approve", response_model=MessageResponse, tags=["events"], summary="Approve a registration", description="Mark a registration as verified and paid.")
 def approve_registration(event_id: int, reg_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
     if not event:
@@ -276,7 +276,7 @@ def approve_registration(event_id: int, reg_id: int, current_user: User = Depend
     db.commit()
     return {"success": True, "status": "paid"}
 
-@router.put("/{event_id}/registrations/{reg_id}/reject")
+@router.put("/{event_id}/registrations/{reg_id}/reject", response_model=MessageResponse, tags=["events"], summary="Reject a registration", description="Mark a registration as failed/unverified.")
 def reject_registration(event_id: int, reg_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
     if not event:

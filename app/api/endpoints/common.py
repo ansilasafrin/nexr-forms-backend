@@ -50,3 +50,86 @@ class RegistrationCreate(BaseModel):
 class PostCreate(BaseModel):
     title: str
     content: str
+
+# --- Response Models ---
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+
+    class Config:
+        from_attributes = True
+
+class AuthResponse(BaseModel):
+    user: UserResponse
+    token: str
+
+class EventFieldResponse(BaseModel):
+    id: int
+    order_index: int
+    label: str
+    type: str
+    required: bool
+    description: Optional[str] = None
+    min_value: Optional[int] = None
+    max_value: Optional[int] = None
+    file_types: Optional[List[str]] = None
+    max_file_size: Optional[int] = None
+    options: Optional[List[str]] = None
+    image_url: Optional[str] = None
+    logic: Optional[Dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
+
+class EventResponse(BaseModel):
+    id: int
+    organizer_id: int
+    title: str
+    description: Optional[str] = None
+    location: Optional[str] = None
+    start_date_time: Optional[datetime] = None
+    end_date_time: Optional[datetime] = None
+    max_seats: Optional[int] = None
+    status: str
+    limit_one_response: bool
+    whatsapp_link: Optional[str] = None
+    is_paid: Optional[bool] = False
+    registration_count: Optional[int] = 0
+    created_at: datetime
+    fields: List[EventFieldResponse] = []
+
+    class Config:
+        from_attributes = True
+
+class RegistrationResponse(BaseModel):
+    id: int
+    event_id: int
+    submitted_at: datetime
+    answers: Optional[Dict[str, Any]] = None
+    verified: bool
+    payment_status: str
+
+    class Config:
+        from_attributes = True
+
+class PostResponse(BaseModel):
+    id: int
+    title: str
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class UploadResponse(BaseModel):
+    filename: str
+    original_filename: str
+    url: str
+    size: int
+
+class MessageResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    status: Optional[str] = None

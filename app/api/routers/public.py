@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.db.models import Event, EventField, Registration
-from app.api.endpoints.common import RegistrationCreate
+from app.api.endpoints.common import RegistrationCreate, EventResponse, RegistrationResponse
 
 router = APIRouter()
 
-@router.get("/events/{event_id}")
+@router.get("/events/{event_id}", response_model=EventResponse, tags=["public"], summary="Get public event details", description="Retrieve basic information about an event for the registration page.")
 def get_public_event(event_id: int, db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
@@ -29,7 +29,7 @@ def get_public_event(event_id: int, db: Session = Depends(get_db)):
         "fields": fields
     }
 
-@router.post("/events/{event_id}/register")
+@router.post("/events/{event_id}/register", response_model=RegistrationResponse, tags=["public"], summary="Register for an event", description="Submit a registration response for a specific event.")
 def register_event(event_id: int, reg: RegistrationCreate, db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id).first()
     if not event:
@@ -62,7 +62,7 @@ def register_event(event_id: int, reg: RegistrationCreate, db: Session = Depends
     db.refresh(new_reg)
     return new_reg
 
-@router.post("/responses")
+@router.post("/responses", response_model=RegistrationResponse, tags=["public"], summary="Create a registration response", description="Generic endpoint to submit a registration for any event.")
 def create_response(reg: RegistrationCreate, db: Session = Depends(get_db)):
     if not reg.eventId:
         raise HTTPException(status_code=400, detail="Event ID is required")

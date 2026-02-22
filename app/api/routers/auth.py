@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.api.deps import get_db, get_password_hash, verify_password, create_access_token
 from app.db.models import User
-from app.api.endpoints.common import UserCreate, UserLogin
+from app.api.endpoints.common import UserCreate, UserLogin, AuthResponse, MessageResponse
 
 router = APIRouter()
 
-@router.post("/register")
+@router.post("/register", response_model=AuthResponse, tags=["auth"], summary="Register a new user", description="Create a new account by providing a name, email, and password.")
 def register(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
@@ -21,7 +21,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     token = create_access_token(data={"id": new_user.id, "email": new_user.email})
     return {"user": {"id": new_user.id, "name": new_user.name, "email": new_user.email}, "token": token}
 
-@router.post("/login")
+@router.post("/login", response_model=AuthResponse, tags=["auth"], summary="User login", description="Authenticate with email and password to receive a JWT access token.")
 def login(user: UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.email == user.email).first()
     if not db_user or not verify_password(user.password, db_user.password_hash):
@@ -30,6 +30,6 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     token = create_access_token(data={"id": db_user.id, "email": db_user.email})
     return {"user": {"id": db_user.id, "name": db_user.name, "email": db_user.email}, "token": token}
 
-@router.get("/health")
+@router.get("/health", response_model=MessageResponse, tags=["auth"], summary="Health check", description="Verify if the authentication service is responsive.")
 def health_check():
-    return {"status": "ok"}
+    return {"success": True, "status": "ok"}

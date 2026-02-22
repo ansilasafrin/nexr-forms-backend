@@ -4,6 +4,7 @@ import os
 import uuid
 import tempfile
 from pathlib import Path
+from app.api.endpoints.common import UploadResponse, MessageResponse
 
 router = APIRouter()
 
@@ -14,7 +15,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # Max file size: 10MB
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
-@router.post("/")
+@router.post("/", response_model=UploadResponse, tags=["uploads"], summary="Upload a file", description="Upload an image or document to the server. Returns the filename and access URL.")
 async def upload_file(file: UploadFile = File(...)):
     """Upload a file and return its URL"""
     try:
@@ -44,7 +45,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 
 
-@router.delete("/{filename}")
+@router.delete("/{filename}", response_model=MessageResponse, tags=["uploads"], summary="Delete a file", description="Permanently delete an uploaded file from the server.")
 async def delete_file(filename: str):
     """Delete an uploaded file"""
     file_path = UPLOAD_DIR / filename
