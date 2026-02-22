@@ -48,6 +48,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 from fastapi.staticfiles import StaticFiles
 import os
 import shutil
+import tempfile
 from fastapi import File, UploadFile
 
 # CORS
@@ -59,18 +60,19 @@ from fastapi import File, UploadFile
     allow_headers=["*"],
 )
 """
-# Create uploads dir if not exists
-os.makedirs("uploads", exist_ok=True)
+# Create uploads dir in temp if not exists
+UPLOAD_DIR = os.path.join(tempfile.gettempdir(), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Mount StaticFiles
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 @app.post("/upload/")
 async def upload_file(file: UploadFile = File(...)):
     import uuid
     file_extension = os.path.splitext(file.filename)[1]
     unique_filename = f"{uuid.uuid4()}{file_extension}"
-    file_location = f"uploads/{unique_filename}"
+    file_location = os.path.join(UPLOAD_DIR, unique_filename)
     with open(file_location, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     return {"filename": unique_filename}

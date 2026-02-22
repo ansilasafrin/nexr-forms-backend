@@ -2,13 +2,14 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 import os
 import uuid
+import tempfile
 from pathlib import Path
 
 router = APIRouter()
 
-# Upload directory
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+# Upload directory in temp
+UPLOAD_DIR = Path(tempfile.gettempdir()) / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Max file size: 10MB
 MAX_FILE_SIZE = 10 * 1024 * 1024
