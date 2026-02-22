@@ -78,6 +78,10 @@ async def upload_file(file: UploadFile = File(...)):
     return {"filename": unique_filename}
 
 
+@app.get("/")
+async def root():
+    return {"status": "Backend is running"}
+
 # Routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(events.router, prefix="/api/events", tags=["events"])
