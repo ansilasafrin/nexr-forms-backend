@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+import datetime
 
 class UserCreate(BaseModel):
     name: str
@@ -90,15 +90,15 @@ class EventResponse(BaseModel):
     title: str
     description: Optional[str] = None
     location: Optional[str] = None
-    start_date_time: Optional[datetime] = None
-    end_date_time: Optional[datetime] = None
+    start_date_time: Optional[datetime.datetime] = None
+    end_date_time: Optional[datetime.datetime] = None
     max_seats: Optional[int] = None
     status: str
     limit_one_response: bool
     whatsapp_link: Optional[str] = None
     is_paid: Optional[bool] = False
     registration_count: Optional[int] = 0
-    created_at: datetime
+    created_at: datetime.datetime
     fields: List[EventFieldResponse] = []
 
     class Config:
@@ -107,7 +107,7 @@ class EventResponse(BaseModel):
 class RegistrationResponse(BaseModel):
     id: int
     event_id: int
-    submitted_at: datetime
+    submitted_at: datetime.datetime
     answers: Optional[Dict[str, Any]] = None
     verified: bool
     payment_status: str
@@ -119,7 +119,7 @@ class PostResponse(BaseModel):
     id: int
     title: str
     content: str
-    created_at: datetime
+    created_at: datetime.datetime
 
     class Config:
         from_attributes = True
