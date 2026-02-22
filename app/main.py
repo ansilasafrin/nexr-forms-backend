@@ -49,13 +49,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+origins = [
+    "https://nexr-forms.vercel.app",
+    "https://forms.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://nexr-forms.vercel.app",  # test frontend
-        "https://forms.vercel.app",  # Production Frontend
-        "http://localhost:3000"      # local dev
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,10 +70,19 @@ app.add_middleware(
 async def global_exception_handler(request: Request, exc: Exception):
     print(f"Global Exception: {exc}")
     traceback.print_exc()
-    return JSONResponse(
+    response = JSONResponse(
         status_code=500,
         content={"message": "Internal Server Error", "details": str(exc)},
     )
+    # Manually add CORS headers for 500 errors to avoid browser 'CORS blocked' mask
+    origin = request.headers.get("origin")
+    if origin in origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    elif "*" in origins or not origins:
+         response.headers["Access-Control-Allow-Origin"] = "*"
+    
+    return response
 
 # Validation Exception Handler
 @app.exception_handler(RequestValidationError)

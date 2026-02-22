@@ -2,29 +2,35 @@ from fastapi import Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from typing import Optional
-import bcrypt
 from datetime import datetime, timedelta
-
+from passlib.context import CryptContext
 from app.db.engine import SessionLocal
 from app.db.models import User
 from app.core.config import settings
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- DB DEP ---
 def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception as db_err:
+        print("-" * 50)
+        print(f"DATABASE ERROR in get_db: {db_err}")
+        import traceback
+        traceback.print_exc()
+        print("-" * 50)
+        raise
     finally:
         db.close()
 
 # --- AUTH UTILS ---
 def verify_password(plain_password, hashed_password):
-    if isinstance(hashed_password, str):
-        hashed_password = hashed_password.encode('utf-8')
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password)
+    return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password):
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    return pwd_context.hash(password)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
