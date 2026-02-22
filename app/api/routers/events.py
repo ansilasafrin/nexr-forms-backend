@@ -82,65 +82,81 @@ async def get_event(event_id: int, current_user: User = Depends(get_current_user
 
 @router.post("/", response_model=EventResponse, tags=["events"], summary="Create an event")
 async def create_event(event: EventCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    new_event = Event(
-        organizer_id=current_user.id,
-        title=event.title,
-        description=event.description,
-        location=event.location,
-        start_date_time=datetime.fromisoformat(event.startDateTime.replace('Z', '+00:00')) if event.startDateTime else None,
-        end_date_time=datetime.fromisoformat(event.endDateTime.replace('Z', '+00:00')) if event.endDateTime else None,
-        max_seats=event.maxSeats,
-        status=event.status or "draft",
-        limit_one_response=event.limitOneResponse,
-        whatsapp_link=event.whatsappLink,
-        is_paid=event.isPaid
-    )
-    db.add(new_event)
-    await db.commit()
-    await db.refresh(new_event)
-    
-    if event.fields:
-        for f in event.fields:
-            new_field = EventField(
-                event_id=new_event.id,
-                order_index=f.order_index,
-                label=f.label,
-                type=f.type,
-                required=f.required,
-                description=f.description,
-                min_value=f.min_value,
-                max_value=f.max_value,
-                file_types=f.file_types,
-                max_file_size=f.max_file_size,
-                options=f.options,
-                image_url=f.image_url,
-                logic=f.logic
-            )
-            db.add(new_field)
+    try:
+        print(f"DEBUG: Starting event creation for user {current_user.id}")
+        print(f"DEBUG: Payload: {event.dict()}")
+        
+        new_event = Event(
+            organizer_id=current_user.id,
+            title=event.title,
+            description=event.description,
+            location=event.location,
+            start_date_time=datetime.fromisoformat(event.startDateTime.replace('Z', '+00:00')) if event.startDateTime else None,
+            end_date_time=datetime.fromisoformat(event.endDateTime.replace('Z', '+00:00')) if event.endDateTime else None,
+            max_seats=event.maxSeats,
+            status=event.status or "draft",
+            limit_one_response=event.limitOneResponse,
+            whatsapp_link=event.whatsappLink,
+            is_paid=event.isPaid
+        )
+        db.add(new_event)
         await db.commit()
-    
-    # Fetch fields to include in response
-    fields_result = await db.execute(
-        select(EventField).filter(EventField.event_id == new_event.id).order_by(EventField.order_index)
-    )
-    fields = fields_result.scalars().all()
-    
-    return {
-        "id": new_event.id,
-        "organizer_id": new_event.organizer_id,
-        "title": new_event.title,
-        "description": new_event.description,
-        "location": new_event.location,
-        "start_date_time": new_event.start_date_time,
-        "end_date_time": new_event.end_date_time,
-        "max_seats": new_event.max_seats,
-        "status": new_event.status,
-        "limit_one_response": new_event.limit_one_response,
-        "whatsapp_link": new_event.whatsapp_link,
-        "is_paid": new_event.is_paid,
-        "created_at": new_event.created_at,
-        "fields": fields
-    }
+        await db.refresh(new_event)
+        
+        print(f"DEBUG: Event created with ID: {new_event.id}")
+        
+        if event.fields:
+            print(f"DEBUG: Adding {len(event.fields)} fields")
+            for f in event.fields:
+                new_field = EventField(
+                    event_id=new_event.id,
+                    order_index=f.order_index,
+                    label=f.label,
+                    type=f.type,
+                    required=f.required,
+                    description=f.description,
+                    min_value=f.min_value,
+                    max_value=f.max_value,
+                    file_types=f.file_types,
+                    max_file_size=f.max_file_size,
+                    options=f.options,
+                    image_url=f.image_url,
+                    logic=f.logic
+                )
+                db.add(new_field)
+            await db.commit()
+        
+        # Fetch fields to include in response
+        fields_result = await db.execute(
+            select(EventField).filter(EventField.event_id == new_event.id).order_by(EventField.order_index)
+        )
+        fields = fields_result.scalars().all()
+        
+        print(f"DEBUG: event_create successful")
+        
+        return {
+            "id": new_event.id,
+            "organizer_id": new_event.organizer_id,
+            "title": new_event.title,
+            "description": new_event.description,
+            "location": new_event.location,
+            "start_date_time": new_event.start_date_time,
+            "end_date_time": new_event.end_date_time,
+            "max_seats": new_event.max_seats,
+            "status": new_event.status,
+            "limit_one_response": new_event.limit_one_response,
+            "whatsapp_link": new_event.whatsapp_link,
+            "is_paid": new_event.is_paid,
+            "created_at": new_event.created_at,
+            "fields": fields
+        }
+    except Exception as e:
+        print(f"ERROR in create_event: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to create event: {str(e)}")
 
 @router.put("/{event_id}", response_model=EventResponse, tags=["events"], summary="Update an event")
 async def update_event(event_id: int, event: EventCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
