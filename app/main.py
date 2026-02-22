@@ -52,6 +52,8 @@ app = FastAPI(
 origins = [
     "https://nexr-forms.vercel.app",
     "https://forms.vercel.app",
+    "https://nexr-forms-frontend.vercel.app",
+    "https://nexr-forms-backend.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
