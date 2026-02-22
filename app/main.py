@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="EventFlow API")
+app = FastAPI(title="Forms API")
 
 app.add_middleware(
     CORSMiddleware,
