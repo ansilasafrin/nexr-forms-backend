@@ -1,29 +1,28 @@
 from fastapi import Depends, HTTPException, Header
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from jose import JWTError, jwt
 from typing import Optional
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
-from app.db.engine import SessionLocal
+from app.db.engine import AsyncSessionLocal
 from app.db.models import User
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- DB DEP ---
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    except Exception as db_err:
-        print("-" * 50)
-        print(f"DATABASE ERROR in get_db: {db_err}")
-        import traceback
-        traceback.print_exc()
-        print("-" * 50)
-        raise
-    finally:
-        db.close()
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        except Exception as db_err:
+            print("-" * 50)
+            print(f"DATABASE ERROR in get_db: {db_err}")
+            import traceback
+            traceback.print_exc()
+            print("-" * 50)
+            raise
 
 # --- AUTH UTILS ---
 def verify_password(plain_password, hashed_password):
@@ -39,7 +38,7 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+async def get_current_user(authorization: Optional[str] = Header(None), db: AsyncSession = Depends(get_db)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing token")
     
@@ -53,7 +52,8 @@ async def get_current_user(authorization: Optional[str] = Header(None), db: Sess
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
         
-    user = db.query(User).filter(User.id == user_id).first()
+    result = await db.execute(select(User).filter(User.id == user_id))
+    user = result.scalars().first()
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     return user

@@ -11,9 +11,10 @@ from app.api.routers import auth, events, public, uploads, posts
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup
+    # Create tables on startup (using run_sync for AsyncEngine)
     try:
-        Base.metadata.create_all(bind=engine)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     except Exception as e:
         print(f"Error during database initialization: {e}")
     yield

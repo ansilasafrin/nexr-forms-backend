@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, desc
 from datetime import datetime
 from typing import List
 
@@ -9,27 +10,57 @@ from app.api.endpoints.common import EventCreate, EventResponse, RegistrationRes
  
 router = APIRouter()
 
-@router.get("/", response_model=List[EventResponse], tags=["events"], summary="List all events", description="Retrieve a list of all events created by the current user.")
-def get_events(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    events = db.query(Event).filter(Event.organizer_id == current_user.id).order_by(Event.created_at.desc()).all()
+@router.get("/", response_model=List[EventResponse], tags=["events"], summary="List all events")
+async def get_events(
+    skip: int = 0,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Event)
+        .filter(Event.organizer_id == current_user.id)
+        .order_by(desc(Event.created_at))
+        .offset(skip)
+        .limit(limit)
+    )
+
+    events = result.scalars().all()
+    
     res = []
     for e in events:
-        count = db.query(Registration).filter(Registration.event_id == e.id, Registration.verified == True).count()
+        # Count verified registrations
+        count_result = await db.execute(
+            select(func.count(Registration.id))
+            .filter(Registration.event_id == e.id, Registration.verified == True)
+        )
+        count = count_result.scalar() or 0
+        
         e_dict = {c.name: getattr(e, c.name) for c in e.__table__.columns}
         e_dict['fields'] = e.fields
         e_dict['registration_count'] = count
         res.append(e_dict)
     return res
 
-@router.get("/{event_id}", response_model=EventResponse, tags=["events"], summary="Get event details", description="Get detailed information about a specific event, including its fields.")
-def get_event(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
+@router.get("/{event_id}", response_model=EventResponse, tags=["events"], summary="Get event details")
+async def get_event(event_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id)
+    )
+    event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    fields = db.query(EventField).filter(EventField.event_id == event_id).order_by(EventField.order_index).all()
+    fields_result = await db.execute(
+        select(EventField).filter(EventField.event_id == event_id).order_by(EventField.order_index)
+    )
+    fields = fields_result.scalars().all()
     
-    count = db.query(Registration).filter(Registration.event_id == event.id, Registration.verified == True).count()
+    count_result = await db.execute(
+        select(func.count(Registration.id))
+        .filter(Registration.event_id == event.id, Registration.verified == True)
+    )
+    count = count_result.scalar() or 0
 
     return {
         "id": event.id,
@@ -49,9 +80,8 @@ def get_event(event_id: int, current_user: User = Depends(get_current_user), db:
         "fields": fields
     }
 
-@router.post("/", response_model=EventResponse, tags=["events"], summary="Create an event", description="Create a new event with custom registration fields.")
-def create_event(event: EventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    print(f"DEBUG: create_event called with {event}")
+@router.post("/", response_model=EventResponse, tags=["events"], summary="Create an event")
+async def create_event(event: EventCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     new_event = Event(
         organizer_id=current_user.id,
         title=event.title,
@@ -66,8 +96,8 @@ def create_event(event: EventCreate, current_user: User = Depends(get_current_us
         is_paid=event.isPaid
     )
     db.add(new_event)
-    db.commit()
-    db.refresh(new_event)
+    await db.commit()
+    await db.refresh(new_event)
     
     if event.fields:
         for f in event.fields:
@@ -87,10 +117,13 @@ def create_event(event: EventCreate, current_user: User = Depends(get_current_us
                 logic=f.logic
             )
             db.add(new_field)
-        db.commit()
+        await db.commit()
     
     # Fetch fields to include in response
-    fields = db.query(EventField).filter(EventField.event_id == new_event.id).order_by(EventField.order_index).all()
+    fields_result = await db.execute(
+        select(EventField).filter(EventField.event_id == new_event.id).order_by(EventField.order_index)
+    )
+    fields = fields_result.scalars().all()
     
     return {
         "id": new_event.id,
@@ -109,10 +142,12 @@ def create_event(event: EventCreate, current_user: User = Depends(get_current_us
         "fields": fields
     }
 
-@router.put("/{event_id}", response_model=EventResponse, tags=["events"], summary="Update an event", description="Modify an existing event's details and registration fields.")
-def update_event(event_id: int, event: EventCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    print(f"DEBUG: update_event called for event_id={event_id} with payload: {event}")
-    db_event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
+@router.put("/{event_id}", response_model=EventResponse, tags=["events"], summary="Update an event")
+async def update_event(event_id: int, event: EventCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id)
+    )
+    db_event = result.scalars().first()
     if not db_event:
         raise HTTPException(status_code=404, detail="Event not found")
     
@@ -131,15 +166,22 @@ def update_event(event_id: int, event: EventCreate, current_user: User = Depends
     
     if event.fields is not None:
         # Get existing fields mapped by ID
-        existing_fields = {f.id: f for f in db.query(EventField).filter(EventField.event_id == event_id).all()}
+        existing_fields_result = await db.execute(
+            select(EventField).filter(EventField.event_id == event_id)
+        )
+        existing_fields = {f.id: f for f in existing_fields_result.scalars().all()}
         
         # Track which IDs have been processed (updated)
         processed_ids = set()
 
         for f in event.fields:
-            # If field has an ID and exists in DB, update it
-            if f.id is not None and f.id in existing_fields:
-                db_field = existing_fields[f.id]
+            try:
+                f_id = int(f.id) if f.id is not None else None
+            except (ValueError, TypeError):
+                f_id = None
+
+            if f_id is not None and f_id in existing_fields:
+                db_field = existing_fields[f_id]
                 db_field.order_index = f.order_index
                 db_field.label = f.label
                 db_field.type = f.type
@@ -152,7 +194,7 @@ def update_event(event_id: int, event: EventCreate, current_user: User = Depends
                 db_field.options = f.options
                 db_field.image_url = f.image_url
                 db_field.logic = f.logic
-                processed_ids.add(f.id)
+                processed_ids.add(f_id)
             else:
                 # New field
                 new_field = EventField(
@@ -175,13 +217,16 @@ def update_event(event_id: int, event: EventCreate, current_user: User = Depends
         # Delete any fields that were not in the update payload
         for fid, db_field in existing_fields.items():
             if fid not in processed_ids:
-                db.delete(db_field)
+                await db.delete(db_field)
             
-    db.commit()
-    db.refresh(db_event)
+    await db.commit()
+    await db.refresh(db_event)
     
     # Fetch fields to include in response
-    fields = db.query(EventField).filter(EventField.event_id == event_id).order_by(EventField.order_index).all()
+    fields_result = await db.execute(
+        select(EventField).filter(EventField.event_id == event_id).order_by(EventField.order_index)
+    )
+    fields = fields_result.scalars().all()
     
     return {
         "id": db_event.id,
@@ -200,44 +245,70 @@ def update_event(event_id: int, event: EventCreate, current_user: User = Depends
         "fields": fields
     }
 
-@router.delete("/{event_id}", response_model=MessageResponse, tags=["events"], summary="Delete an event", description="Permanently delete an event and all its associated registrations.")
-def delete_event(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    db_event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
+@router.delete("/{event_id}", response_model=MessageResponse, tags=["events"], summary="Delete an event")
+async def delete_event(event_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id)
+    )
+    db_event = result.scalars().first()
     if not db_event:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    # Delete associated registrations first to prevent FK violation
-    db.query(Registration).filter(Registration.event_id == event_id).delete()
-    
-    db.delete(db_event)
-    db.commit()
+    await db.delete(db_event)
+    await db.commit()
     return {"success": True}
 
-@router.get("/{event_id}/registrations", response_model=List[RegistrationResponse], tags=["events"], summary="List event registrations", description="Retrieve all registration responses for a specific event.")
-def get_registrations(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
+@router.get("/{event_id}/registrations", response_model=List[RegistrationResponse], tags=["events"], summary="List event registrations")
+async def get_registrations(
+    event_id: int, 
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id)
+    )
+    event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=403, detail="Unauthorized")
         
-    regs = db.query(Registration).filter(Registration.event_id == event_id).order_by(Registration.submitted_at.desc()).all()
+    regs_result = await db.execute(
+        select(Registration)
+        .filter(Registration.event_id == event_id)
+        .order_by(desc(Registration.submitted_at))
+        .offset(skip)
+        .limit(limit)
+    )
+
+    regs = regs_result.scalars().all()
     return regs
 
 import csv
 import io
 from fastapi.responses import StreamingResponse
 
-@router.get("/{event_id}/export", tags=["events"], summary="Export registrations to CSV", description="Download a CSV file containing all registration responses for the event.")
-def export_event_registrations(event_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
+@router.get("/{event_id}/export", tags=["events"], summary="Export registrations to CSV")
+async def export_event_registrations(event_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id)
+    )
+    event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
         
     # Get fields for headers ignoring SECTION fields which have no answers usually
-    fields = db.query(EventField).filter(EventField.event_id == event_id, EventField.type != 'SECTION').order_by(EventField.order_index).all()
+    fields_result = await db.execute(
+        select(EventField).filter(EventField.event_id == event_id, EventField.type != 'SECTION').order_by(EventField.order_index)
+    )
+    fields = fields_result.scalars().all()
     headers = ["Submission Date"] + [f.label for f in fields]
     
     # Get registrations
-    registrations = db.query(Registration).filter(Registration.event_id == event_id).order_by(Registration.submitted_at.desc()).all()
+    regs_result = await db.execute(
+        select(Registration).filter(Registration.event_id == event_id).order_by(desc(Registration.submitted_at))
+    )
+    registrations = regs_result.scalars().all()
     
     # Generate CSV in memory (simple for MPV)
     output = io.StringIO()
@@ -261,32 +332,44 @@ def export_event_registrations(event_id: int, current_user: User = Depends(get_c
         headers={"Content-Disposition": f"attachment; filename=event_{event_id}_responses.csv"}
     )
 
-@router.put("/{event_id}/registrations/{reg_id}/approve", response_model=MessageResponse, tags=["events"], summary="Approve a registration", description="Mark a registration as verified and paid.")
-def approve_registration(event_id: int, reg_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
+@router.put("/{event_id}/registrations/{reg_id}/approve", response_model=MessageResponse, tags=["events"], summary="Approve a registration")
+async def approve_registration(event_id: int, reg_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id)
+    )
+    event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
         
-    reg = db.query(Registration).filter(Registration.id == reg_id, Registration.event_id == event_id).first()
+    reg_result = await db.execute(
+        select(Registration).filter(Registration.id == reg_id, Registration.event_id == event_id)
+    )
+    reg = reg_result.scalars().first()
     if not reg:
         raise HTTPException(status_code=404, detail="Registration not found")
         
     reg.verified = True
     reg.payment_status = "paid"
-    db.commit()
+    await db.commit()
     return {"success": True, "status": "paid"}
 
-@router.put("/{event_id}/registrations/{reg_id}/reject", response_model=MessageResponse, tags=["events"], summary="Reject a registration", description="Mark a registration as failed/unverified.")
-def reject_registration(event_id: int, reg_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id).first()
+@router.put("/{event_id}/registrations/{reg_id}/reject", response_model=MessageResponse, tags=["events"], summary="Reject a registration")
+async def reject_registration(event_id: int, reg_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id)
+    )
+    event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
         
-    reg = db.query(Registration).filter(Registration.id == reg_id, Registration.event_id == event_id).first()
+    reg_result = await db.execute(
+        select(Registration).filter(Registration.id == reg_id, Registration.event_id == event_id)
+    )
+    reg = reg_result.scalars().first()
     if not reg:
         raise HTTPException(status_code=404, detail="Registration not found")
         
     reg.verified = False
     reg.payment_status = "failed"
-    db.commit()
+    await db.commit()
     return {"success": True, "status": "failed"}

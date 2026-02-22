@@ -13,7 +13,7 @@ class User(Base):
 class Event(Base):
     __tablename__ = "events"
     id = Column(Integer, primary_key=True, index=True)
-    organizer_id = Column(Integer, ForeignKey("users.id"))
+    organizer_id = Column(Integer, ForeignKey("users.id"), index=True)
     title = Column(String, nullable=False)
     description = Column(Text)
     location = Column(String)
@@ -31,7 +31,7 @@ class Event(Base):
 class EventField(Base):
     __tablename__ = "event_fields"
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("events.id"))
+    event_id = Column(Integer, ForeignKey("events.id"), index=True)
     order_index = Column(Integer)
     label = Column(String)
     type = Column(String)
@@ -50,7 +50,7 @@ class EventField(Base):
 class Registration(Base):
     __tablename__ = "registrations"
     id = Column(Integer, primary_key=True, index=True)
-    event_id = Column(Integer, ForeignKey("events.id"))
+    event_id = Column(Integer, ForeignKey("events.id"), index=True)
     submitted_at = Column(DateTime, default=datetime.utcnow)
     answers = Column(JSON)
     verified = Column(Boolean, default=False)

@@ -1,18 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
 from app.api.deps import get_db
 from app.db.models import Event, EventField, Registration
 from app.api.endpoints.common import RegistrationCreate, EventResponse, RegistrationResponse
 
 router = APIRouter()
 
-@router.get("/events/{event_id}", response_model=EventResponse, tags=["public"], summary="Get public event details", description="Retrieve basic information about an event for the registration page.")
-def get_public_event(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
+@router.get("/events/{event_id}", response_model=EventResponse, tags=["public"], summary="Get public event details")
+async def get_public_event(event_id: int, response: Response, db: AsyncSession = Depends(get_db)):
+    # Cache for 60 seconds at the edge, but allow stale-while-revalidate
+    response.headers["Cache-Control"] = "public, s-maxage=60, stale-while-revalidate=30"
+    
+    result = await db.execute(select(Event).filter(Event.id == event_id))
+    event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    fields = db.query(EventField).filter(EventField.event_id == event_id).order_by(EventField.order_index).all()
+    fields_result = await db.execute(
+        select(EventField).filter(EventField.event_id == event_id).order_by(EventField.order_index)
+    )
+    fields = fields_result.scalars().all()
     
     return {
         "id": event.id,
@@ -26,21 +34,26 @@ def get_public_event(event_id: int, db: Session = Depends(get_db)):
         "status": event.status,
         "limit_one_response": event.limit_one_response,
         "whatsapp_link": event.whatsapp_link,
+        "is_paid": event.is_paid,
         "fields": fields
     }
 
-@router.post("/events/{event_id}/register", response_model=RegistrationResponse, tags=["public"], summary="Register for an event", description="Submit a registration response for a specific event.")
-def register_event(event_id: int, reg: RegistrationCreate, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id).first()
+@router.post("/events/{event_id}/register", response_model=RegistrationResponse, tags=["public"], summary="Register for an event")
+async def register_event(event_id: int, reg: RegistrationCreate, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Event).filter(Event.id == event_id))
+    event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
     if event.max_seats:
-        count = db.query(Registration).filter(
-            Registration.event_id == event_id,
-            Registration.verified == True,
-            Registration.payment_status == "paid"
-        ).count()
+        count_result = await db.execute(
+            select(func.count(Registration.id)).filter(
+                Registration.event_id == event_id,
+                Registration.verified == True,
+                Registration.payment_status == "paid"
+            )
+        )
+        count = count_result.scalar() or 0
         if count >= event.max_seats:
             raise HTTPException(status_code=400, detail="Registration closed: Maximum capacity reached")
 
@@ -58,26 +71,30 @@ def register_event(event_id: int, reg: RegistrationCreate, db: Session = Depends
         payment_status=pay_status
     )
     db.add(new_reg)
-    db.commit()
-    db.refresh(new_reg)
+    await db.commit()
+    await db.refresh(new_reg)
     return new_reg
 
-@router.post("/responses", response_model=RegistrationResponse, tags=["public"], summary="Create a registration response", description="Generic endpoint to submit a registration for any event.")
-def create_response(reg: RegistrationCreate, db: Session = Depends(get_db)):
+@router.post("/responses", response_model=RegistrationResponse, tags=["public"], summary="Create a registration response")
+async def create_response(reg: RegistrationCreate, db: AsyncSession = Depends(get_db)):
     if not reg.eventId:
         raise HTTPException(status_code=400, detail="Event ID is required")
         
     event_id = reg.eventId
-    event = db.query(Event).filter(Event.id == event_id).first()
+    result = await db.execute(select(Event).filter(Event.id == event_id))
+    event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
     if event.max_seats:
-        count = db.query(Registration).filter(
-            Registration.event_id == event_id,
-            Registration.verified == True,
-            Registration.payment_status == "paid"
-        ).count()
+        count_result = await db.execute(
+            select(func.count(Registration.id)).filter(
+                Registration.event_id == event_id,
+                Registration.verified == True,
+                Registration.payment_status == "paid"
+            )
+        )
+        count = count_result.scalar() or 0
         if count >= event.max_seats:
             raise HTTPException(status_code=400, detail="Registration closed: Maximum capacity reached")
 
@@ -95,6 +112,6 @@ def create_response(reg: RegistrationCreate, db: Session = Depends(get_db)):
         payment_status=pay_status
     )
     db.add(new_reg)
-    db.commit()
-    db.refresh(new_reg)
+    await db.commit()
+    await db.refresh(new_reg)
     return new_reg
