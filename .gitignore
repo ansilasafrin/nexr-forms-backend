@@ -1,0 +1,11 @@
+# Python specific
+__pycache__/
+*.pyc
+venv/
+.env
+uploads/
+
+# Logs & OS
+*.log
+.vscode/
+.DS_Store
