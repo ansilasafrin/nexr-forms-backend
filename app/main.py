@@ -4,13 +4,20 @@ from fastapi.responses import JSONResponse
 import traceback
 from fastapi.exceptions import RequestValidationError
 
+from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.db.engine import Base, engine
 from app.api.routers import auth, events, public, uploads, posts
 
-from fastapi.middleware.cors import CORSMiddleware
-# Create tables
-Base.metadata.create_all(bind=engine)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create tables on startup
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as e:
+        print(f"Error during database initialization: {e}")
+    yield
+    # Cleanup on shutdown (if needed)
 
 description = """
 Nexr Forms API helps you manage events, tracking, and form responses efficiently. 🚀
@@ -38,7 +45,8 @@ app = FastAPI(
     version="1.0.0",
     openapi_tags=tags_metadata,
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 app.add_middleware(
