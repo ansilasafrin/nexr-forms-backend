@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc
+from sqlalchemy.orm import selectinload
 from datetime import datetime
 from typing import List
 
@@ -12,56 +13,73 @@ router = APIRouter()
 
 @router.get("/", response_model=List[EventResponse], tags=["events"], summary="List all events")
 async def get_events(
+    response: Response,
     skip: int = 0,
     limit: int = 20,
     current_user: User = Depends(get_current_user), 
     db: AsyncSession = Depends(get_db)
 ):
-    result = await db.execute(
-        select(Event)
+    # Set Cache-Control header for private, personalized content
+    response.headers["Cache-Control"] = "private, max-age=60"
+    
+    # Optimized query to fetch events and their verified registration counts in a single efficient join
+    # This eliminates the N+1 query bottleneck
+    query = (
+        select(
+            Event,
+            func.count(Registration.id).filter(Registration.verified == True).label("registration_count")
+        )
+        .outerjoin(Registration, Event.id == Registration.event_id)
+        .options(selectinload(Event.fields)) # Eagerly load fields to avoid MissingGreenlet
         .filter(Event.organizer_id == current_user.id)
+        .group_by(Event.id)
         .order_by(desc(Event.created_at))
         .offset(skip)
         .limit(limit)
     )
-
-    events = result.scalars().all()
+    
+    result = await db.execute(query)
+    rows = result.all() # Each row is (Event object, count)
     
     res = []
-    for e in events:
-        # Count verified registrations
-        count_result = await db.execute(
-            select(func.count(Registration.id))
-            .filter(Registration.event_id == e.id, Registration.verified == True)
-        )
-        count = count_result.scalar() or 0
-        
-        e_dict = {c.name: getattr(e, c.name) for c in e.__table__.columns}
-        e_dict['fields'] = e.fields
-        e_dict['registration_count'] = count
+    for event, reg_count in rows:
+        # Pydantic/SQLAlchemy compatibility: construct response dict
+        e_dict = {c.name: getattr(event, c.name) for c in event.__table__.columns}
+        e_dict['fields'] = event.fields # already prefetched if using 'selectinload' in model, else Lazy
+        e_dict['registration_count'] = reg_count
         res.append(e_dict)
     return res
 
 @router.get("/{event_id}", response_model=EventResponse, tags=["events"], summary="Get event details")
-async def get_event(event_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(Event).filter(Event.id == event_id, Event.organizer_id == current_user.id)
+async def get_event(
+    event_id: int, 
+    response: Response,
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
+):
+    # Set Cache-Control header
+    response.headers["Cache-Control"] = "private, max-age=60"
+    
+    query = (
+        select(
+            Event,
+            func.count(Registration.id).filter(Registration.verified == True).label("registration_count")
+        )
+        .outerjoin(Registration, Event.id == Registration.event_id)
+        .options(selectinload(Event.fields)) # Eagerly load fields
+        .filter(Event.id == event_id, Event.organizer_id == current_user.id)
+        .group_by(Event.id)
     )
-    event = result.scalars().first()
-    if not event:
+    
+    result = await db.execute(query)
+    row = result.first()
+    
+    if not row:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    fields_result = await db.execute(
-        select(EventField).filter(EventField.event_id == event_id).order_by(EventField.order_index)
-    )
-    fields = fields_result.scalars().all()
+    event, reg_count = row
     
-    count_result = await db.execute(
-        select(func.count(Registration.id))
-        .filter(Registration.event_id == event.id, Registration.verified == True)
-    )
-    count = count_result.scalar() or 0
-
+    # event.fields is already populated via selectinload in the query above
     return {
         "id": event.id,
         "organizer_id": event.organizer_id,
@@ -75,9 +93,9 @@ async def get_event(event_id: int, current_user: User = Depends(get_current_user
         "limit_one_response": event.limit_one_response,
         "whatsapp_link": event.whatsapp_link,
         "is_paid": event.is_paid,
-        "registration_count": count,
+        "registration_count": reg_count,
         "created_at": event.created_at,
-        "fields": fields
+        "fields": event.fields
     }
 
 @router.post("/", response_model=EventResponse, tags=["events"], summary="Create an event")

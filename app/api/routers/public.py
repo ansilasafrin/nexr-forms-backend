@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from app.api.deps import get_db
 from app.db.models import Event, EventField, Registration
 from app.api.endpoints.common import RegistrationCreate, EventResponse, RegistrationResponse
@@ -12,16 +13,16 @@ async def get_public_event(event_id: int, response: Response, db: AsyncSession =
     # Cache for 60 seconds at the edge, but allow stale-while-revalidate
     response.headers["Cache-Control"] = "public, s-maxage=60, stale-while-revalidate=30"
     
-    result = await db.execute(select(Event).filter(Event.id == event_id))
+    result = await db.execute(
+        select(Event)
+        .options(selectinload(Event.fields)) # Eagerly load fields
+        .filter(Event.id == event_id)
+    )
     event = result.scalars().first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    fields_result = await db.execute(
-        select(EventField).filter(EventField.event_id == event_id).order_by(EventField.order_index)
-    )
-    fields = fields_result.scalars().all()
-    
+    # event.fields is already populated via selectinload
     return {
         "id": event.id,
         "organizer_id": event.organizer_id,
@@ -35,7 +36,8 @@ async def get_public_event(event_id: int, response: Response, db: AsyncSession =
         "limit_one_response": event.limit_one_response,
         "whatsapp_link": event.whatsapp_link,
         "is_paid": event.is_paid,
-        "fields": fields
+        "created_at": event.created_at,  # Required by EventResponse schema
+        "fields": event.fields
     }
 
 @router.post("/events/{event_id}/register", response_model=RegistrationResponse, tags=["public"], summary="Register for an event")

@@ -25,6 +25,6 @@ class Settings:
 
     SECRET_KEY = os.getenv("JWT_SECRET", "supersecretkey_replace_this_in_production")
     ALGORITHM = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES = 525600 # 1 Year
 
 settings = Settings()

@@ -44,12 +44,20 @@ async def get_current_user(authorization: Optional[str] = Header(None), db: Asyn
     
     token = authorization.split(" ")[1] if " " in authorization else authorization
     try:
+        # Added for debugging 401: Log the first few chars of the secret to ensure .env is loaded correctly
+        # print(f"DEBUG: Using JWT_SECRET hint: {settings.SECRET_KEY[:4]}...") 
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: int = payload.get("id")
         email: str = payload.get("email")
         if user_id is None or email is None:
              raise HTTPException(status_code=401, detail="Invalid token")
-    except JWTError:
+    except jwt.ExpiredSignatureError:
+        print("DEBUG: JWT Error: Token has expired")
+        raise HTTPException(status_code=401, detail="Token expired")
+    except JWTError as e:
+        print(f"DEBUG: JWT Decode Error: {str(e)}")
+        # Log the token prefix for cross-verification if needed
+        # print(f"DEBUG: Failed Token prefix: {token[:10]}...")
         raise HTTPException(status_code=401, detail="Invalid token")
         
     result = await db.execute(select(User).filter(User.id == user_id))
